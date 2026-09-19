@@ -1,0 +1,74 @@
+<p>
+  Implement the <strong>Rotary Position Embedding (RoPE) attention</strong> kernel used in ESM-2,
+  the 650M-parameter protein language model from Meta AI.
+</p>
+<p>
+  Unlike vanilla multi-head attention, ESM-2 encodes sequence position by <em>rotating</em> the
+  query and key vectors before computing attention scores. This lets the model learn
+  relative positional information without a fixed additive embedding table.
+</p>
+
+<h2>Background: what RoPE does</h2>
+<p>
+  For a head dimension of size \(d_k\), positions are encoded using \(d_k / 2\) frequency pairs.
+  Each pair of values \((x_{2i}, x_{2i+1})\) at token position \(m\) is rotated by angle
+  \(\theta_i = m / 10000^{2i / d_k}\):
+</p>
+\[
+\text{RoPE}(x, m)_{2i}   = x_{2i}   \cos(m\,\theta_i) - x_{2i+1} \sin(m\,\theta_i)
+\]
+\[
+\text{RoPE}(x, m)_{2i+1} = x_{2i}   \sin(m\,\theta_i) + x_{2i+1} \cos(m\,\theta_i)
+\]
+<p>
+  Apply RoPE independently to \(Q\) and \(K\), then compute standard scaled dot-product
+  attention, then concatenate all heads into the output:
+</p>
+\[
+\text{head}_i = \text{softmax}\!\left(\frac{\text{RoPE}(Q_i, m)\;\text{RoPE}(K_i, m)^T}{\sqrt{d_k}}\right) V_i
+\]
+\[
+\text{RoPEAttn}(Q, K, V) = \text{Concat}(\text{head}_1, \ldots, \text{head}_h) \in \mathbb{R}^{N \times d_{\text{model}}}
+\]
+
+<h2>Implementation Requirements</h2>
+<ul>
+  <li>Use only native features (external libraries are not permitted)</li>
+  <li>The <code>solve</code> function signature must remain unchanged</li>
+  <li>The final result must be stored in the <code>output</code> array</li>
+  <li><code>positions</code> is an integer array of length \(N\) giving the token position index for each row (0-indexed, supports non-contiguous sequences)</li>
+</ul>
+
+<h2>Example 1:</h2>
+<p>
+Input:
+\[
+N = 2,\quad d_{\text{model}} = 4,\quad h = 2,\quad \text{positions} = [0, 1]
+\]
+\[
+Q = K = V = \begin{bmatrix} 1 & 0 & 0 & 1 \\ 0 & 1 & 1 & 0 \end{bmatrix}
+\]
+</p>
+<p>
+Expected output: same as RoPE-attended result (see reference implementation).
+Position 0 has no rotation (\(\cos 0 = 1, \sin 0 = 0\)), so head outputs at position 0
+match standard MHA. Position 1 rotates by \(\theta_0 = 1/10000^0 = 1\) rad and
+\(\theta_1 = 1/10000^{0.5} \approx 0.01\) rad.
+</p>
+
+<h2>Example 2 (ESM-2 config):</h2>
+<p>
+  \(N = 142\) (SNCA protein, L=140 + BOS + EOS),
+  \(d_{\text{model}} = 1280\), \(h = 20\), \(d_k = 64\).
+  Positions \([0, 1, \ldots, 141]\).
+  This is the exact configuration run 140 times per masked-marginal variant scoring pass.
+</p>
+
+<h2>Constraints</h2>
+<ul>
+  <li><code>1 ≤ N ≤ 4096</code></li>
+  <li><code>d_model ∈ {128, 256, 512, 640, 1024, 1280}</code></li>
+  <li><code>1 ≤ h ≤ d_model / 64</code>, <code>d_model % h == 0</code></li>
+  <li><code>0 ≤ positions[i] &lt; 4096</code></li>
+  <li>Performance is measured with <code>N = 142</code>, <code>d_model = 1280</code>, <code>h = 20</code> (ESM-2 650M config)</li>
+</ul>
